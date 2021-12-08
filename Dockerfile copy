@@ -1,0 +1,18 @@
+FROM centos:centos8
+COPY ./jenkins.sh /usr/local/bin/jenkins.sh
+USER root
+RUN chmod +x /usr/local/bin/jenkins.sh && mkdir /var/jenkins_home && \
+    mkdir -p /usr/share/jenkins/ref
+
+RUN yum update -y && yum install wget sudo epel-release -y
+RUN yum update -y && yum install daemonize initscripts vim yum-utils -y
+
+RUN sudo wget -O /etc/yum.repos.d/jenkins.repo https://pkg.jenkins.io/redhat/jenkins.repo && \
+    sudo rpm --import https://pkg.jenkins.io/redhat/jenkins.io.key
+
+RUN yum install chkconfig java-11-openjdk java-11-openjdk-devel jenkins -y
+
+RUN echo -e "nameserver 10.0.2.3\nnameserver 8.8.8.8\nnameserver 8.8.4.4" > /etc/resolv.conf && yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo && \
+    yum install docker-ce docker-ce-cli containerd.io -y && dockerd &
+#ENV JAVA_OPTS -Djenkins.install.runSetupWizard=false
+RUN jenkins.sh &
