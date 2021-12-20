@@ -18,75 +18,57 @@ spec:
     storage: 10Gi
   accessModes:
     - ReadWriteMany
-  local:
-    path: /var/jenkins_home
-  nodeAffinity:
-    required:
-      nodeSelectorTerms:
-      - matchExpressions:
-        - key: kubernetes.io/hostname
-          operator: In
-          values:
-          - node1
+  mountOptions:
+    - nolock
+    - soft
+    - rw
+  nfs:
+    server: 172.17.0.4
+    path: "/mnt/nfs-share/jenkins"
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: jenkins-home-pvc
 spec:
+  storageClassName: jenkins-storage
   accessModes:
-    - ReadWriteOnce
+    - ReadWriteMany
   resources:
     requests:
       storage: 10Gi
----
-apiVersion: v1
-kind: PersistentVolume
-metadata:
-  name: jenkins-certs-pv
-spec:
-  storageClassName: jenkins-storage
-  capacity:
-    storage: 1Gi
-  accessModes:
-    - ReadWriteMany
-  local:
-    path: /certs/client:ro
-  nodeAffinity:
-    required:
-      nodeSelectorTerms:
-      - matchExpressions:
-        - key: kubernetes.io/hostname
-          operator: In
-          values:
-          - node2
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: jenkins-certs-pvc
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 1Gi
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: jenkins
 spec:
+  type: NodePort
+  ports:
+    - port: 8080
+      targetPort: 8080
+      nodePort: 30080
   selector:
     app: jenkins
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jenkins-jnlp
+spec:
+  type: ClusterIP
   ports:
-  - port: 8080
+    - port: 50000
+      targetPort: 50000
+  selector:
+    app: jenkins
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: jenkins
 spec:
+  replicas: 1
   selector:
     matchLabels:
       app: jenkins
@@ -97,18 +79,18 @@ spec:
     spec:
       containers:
       - name: jenkins
-        image: jenkins/jenkins:lts
-        imagePullPolicy: IfNotPresent
-        resources:
-          limits:
-            memory: "128Mi"
-            cpu: "500m"
-        env:
-          - name: DOCKER_HOST
-            value: tcp://docker:2376
-          - name: DOCKER_CERT_PATH
-            value: /certs/client
-          - name: DOCKER_TLS_VERIFY
-            value: "1"
+        image: joaomanuel/jenkins:2.319.1-jdk11
         ports:
         - containerPort: 8080
+        volumeMounts:
+            - name: jenkinshome-pv
+              mountPath: /var/jenkins_home
+            - name: dockersock
+              mountPath: "/var/run/docker.sock" 
+      volumes:
+        - name: jenkinshome-pv
+          persistentVolumeClaim:
+            claimName: jenkins-home-pvc
+        - name: dockersock
+          hostPath:
+            path: /var/run/docker.sock
